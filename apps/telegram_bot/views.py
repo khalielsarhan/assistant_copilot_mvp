@@ -91,4 +91,4 @@ def telegram_webhook(request):
     text = message.get('text', '')
     reply = handle_message(chat_id, text)
     send_message(chat_id, reply[:3900])
-    return JsonResponse({'ok': True})
+    return JsonResponse({'ok': True, 'reply': reply})
