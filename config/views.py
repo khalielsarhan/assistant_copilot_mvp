@@ -1,4 +1,4 @@
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils import timezone
@@ -116,3 +116,7 @@ def home(request):
     </html>
     """
     return HttpResponse(html)
+
+
+def healthz(request):
+    return JsonResponse({"ok": True})
