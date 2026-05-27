@@ -77,7 +77,7 @@ TELEGRAM_BOT_TOKEN=replace-me
 TELEGRAM_ALLOWED_CHAT_ID=replace-with-your-telegram-chat-id
 
 OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=qwen2.5:0.5b
 
 GITLAB_BASE_URL=https://gitlab.com
 GITLAB_TOKEN=replace-me
@@ -171,7 +171,7 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
 Install Ollama on the host machine, then run:
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull qwen2.5:0.5b
 ollama serve
 ```
 
@@ -179,7 +179,7 @@ Keep this in `.env` when running Django inside Docker:
 
 ```env
 OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=qwen2.5:0.5b
 ```
 
 Ollama is used for:
@@ -190,6 +190,8 @@ Ollama is used for:
 - `/draft_followup`
 
 If Ollama is unavailable, the project still works with simpler fallback parsing and raw summaries.
+
+For better quality on a stronger machine, you can later pull `qwen2.5:7b` and change `OLLAMA_MODEL=qwen2.5:7b`.
 
 Important: keep Ollama private. Do not expose port `11434` to the public internet.
 

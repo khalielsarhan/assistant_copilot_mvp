@@ -46,3 +46,21 @@ class TaskCaptureTests(TestCase):
         self.assertEqual(task.priority, Task.Priority.HIGH)
         self.assertEqual(task.owner_name, "Nour")
         self.assertEqual(task.reminders.count(), 1)
+
+    @patch("apps.tasks.services.generate_json")
+    def test_keyword_category_overrides_weak_ai_category(self, mocked_generate_json):
+        wrong_ai_due_date = (timezone.now() + timezone.timedelta(days=2)).isoformat()
+        mocked_generate_json.return_value = {
+            "title": "urgent",
+            "category": "PERSONAL",
+            "priority": "MEDIUM",
+            "owner_name": "Nour",
+            "due_date": wrong_ai_due_date,
+        }
+
+        task = create_task_from_text("/add urgent client follow up with Sara tomorrow")
+
+        self.assertEqual(task.category, Task.Category.CLIENT)
+        self.assertEqual(task.priority, Task.Priority.URGENT)
+        self.assertEqual(task.title, "urgent client follow up with Sara tomorrow")
+        self.assertEqual(task.due_date.date(), (timezone.localdate() + timezone.timedelta(days=1)))

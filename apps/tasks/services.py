@@ -77,6 +77,7 @@ owner_name defaults to Nour unless another owner is explicit.
 Message: {clean}
 """
     ai = generate_json(prompt, timeout=5)
+    parsed_due = parse_due_date(clean)
     due = None
     if ai.get('due_date'):
         try:
@@ -86,15 +87,27 @@ Message: {clean}
         except Exception:
             due = None
 
-    category = ai.get('category') if ai.get('category') in Task.Category.values else guess_category(clean)
-    priority = ai.get('priority') if ai.get('priority') in Task.Priority.values else guess_priority(clean)
+    guessed_category = guess_category(clean)
+    guessed_priority = guess_priority(clean)
+    category = (
+        guessed_category
+        if guessed_category != Task.Category.CEO
+        else ai.get('category') if ai.get('category') in Task.Category.values else guessed_category
+    )
+    priority = (
+        guessed_priority
+        if guessed_priority != Task.Priority.MEDIUM
+        else ai.get('priority') if ai.get('priority') in Task.Priority.values else guessed_priority
+    )
+    ai_title = (ai.get('title') or '').strip()
+    title = ai_title if len(ai_title.split()) >= 3 else clean
     return {
-        'title': (ai.get('title') or clean)[:255],
+        'title': title[:255],
         'description': ai.get('description') or '',
         'category': category,
         'priority': priority,
         'owner_name': ai.get('owner_name') or 'Nour',
-        'due_date': due or parse_due_date(clean),
+        'due_date': parsed_due if parsed_due else due,
     }
 
 
