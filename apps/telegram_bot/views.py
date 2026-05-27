@@ -6,7 +6,7 @@ from django.utils import timezone
 from apps.telegram_bot.client import send_message
 from apps.tasks.models import Task
 from apps.tasks.services import create_task_from_text, format_task
-from apps.briefing.services import build_briefing
+from apps.briefing.services import build_briefing, build_ceo_suggestions
 from apps.integrations.gitlab import radar_summary
 from apps.ai.ollama import generate
 
@@ -18,6 +18,7 @@ HELP = """CEO Copilot commands:
 /overdue
 /done 12
 /briefing
+/suggest
 /gitlab
 /draft_followup
 """
@@ -64,6 +65,9 @@ def handle_message(chat_id: str, text: str) -> str:
 
     if text == '/briefing':
         return build_briefing()
+
+    if text == '/suggest':
+        return build_ceo_suggestions()
 
     if text == '/gitlab':
         return radar_summary()

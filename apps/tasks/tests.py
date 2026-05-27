@@ -1,7 +1,11 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.tasks.models import Task
+from apps.tasks.services import create_task_from_text
 
 
 class HomeViewTests(TestCase):
@@ -20,3 +24,25 @@ class HomeViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"ok": True})
+
+
+class TaskCaptureTests(TestCase):
+    @patch("apps.tasks.services.generate_json")
+    def test_create_task_uses_ai_extraction_when_available(self, mocked_generate_json):
+        due_date = timezone.now().replace(hour=15, minute=0, second=0, microsecond=0).isoformat()
+        mocked_generate_json.return_value = {
+            "title": "Approve Hue integration direction",
+            "description": "Engineering decision needed before implementation continues.",
+            "category": "ENGINEERING",
+            "priority": "HIGH",
+            "owner_name": "Nour",
+            "due_date": due_date,
+        }
+
+        task = create_task_from_text("/add decide Hue integration plan tomorrow")
+
+        self.assertEqual(task.title, "Approve Hue integration direction")
+        self.assertEqual(task.category, Task.Category.ENGINEERING)
+        self.assertEqual(task.priority, Task.Priority.HIGH)
+        self.assertEqual(task.owner_name, "Nour")
+        self.assertEqual(task.reminders.count(), 1)

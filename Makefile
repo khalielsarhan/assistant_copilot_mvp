@@ -1,6 +1,6 @@
 COMPOSE=docker compose
 
-.PHONY: setup up down restart build migrate shell createsuperuser logs test check status
+.PHONY: setup up down restart recreate build migrate shell createsuperuser logs test check status
 
 setup:
 	test -f .env || cp .env.example .env
@@ -15,6 +15,9 @@ down:
 
 restart:
 	$(COMPOSE) restart
+
+recreate:
+	$(COMPOSE) up -d --force-recreate web celery celery-beat
 
 build:
 	$(COMPOSE) up --build -d

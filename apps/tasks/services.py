@@ -3,6 +3,7 @@ from dateutil.parser import parse
 from django.utils import timezone
 from apps.tasks.models import Task
 from apps.reminders.models import Reminder
+from apps.ai.ollama import generate_json
 
 KEYWORDS = {
     'engineering': Task.Category.ENGINEERING,
@@ -42,21 +43,74 @@ def parse_due_date(text: str):
         return None
 
 
-def create_task_from_text(text: str) -> Task:
+def guess_priority(text: str) -> str:
+    lower = text.lower()
+    if any(word in lower for word in ['urgent', 'asap', 'critical', 'blocked', 'today']):
+        return Task.Priority.URGENT
+    if any(word in lower for word in ['important', 'high priority', 'client', 'deadline']):
+        return Task.Priority.HIGH
+    if any(word in lower for word in ['low priority', 'sometime', 'later']):
+        return Task.Priority.LOW
+    return Task.Priority.MEDIUM
+
+
+def _strip_capture_prefix(text: str) -> str:
     clean = text.replace('/add', '', 1).strip()
     if clean.lower().startswith('remind me to '):
         clean = clean[13:].strip()
-    due = parse_due_date(clean)
+    return clean
+
+
+def extract_task_details(text: str) -> dict:
+    clean = _strip_capture_prefix(text)
+    today = timezone.localdate().isoformat()
+    prompt = f"""
+Extract one CEO assistant task from this message.
+Today is {today}. Return only JSON with these keys:
+title, description, category, priority, owner_name, due_date.
+
+Allowed category values: CEO, ENGINEERING, HR, FINANCE, SALES, CLIENT, PERSONAL.
+Allowed priority values: LOW, MEDIUM, HIGH, URGENT.
+due_date must be ISO 8601 with timezone when present, otherwise null.
+owner_name defaults to Nour unless another owner is explicit.
+
+Message: {clean}
+"""
+    ai = generate_json(prompt, timeout=5)
+    due = None
+    if ai.get('due_date'):
+        try:
+            due = parse(ai['due_date'])
+            if timezone.is_naive(due):
+                due = timezone.make_aware(due, timezone.get_current_timezone())
+        except Exception:
+            due = None
+
+    category = ai.get('category') if ai.get('category') in Task.Category.values else guess_category(clean)
+    priority = ai.get('priority') if ai.get('priority') in Task.Priority.values else guess_priority(clean)
+    return {
+        'title': (ai.get('title') or clean)[:255],
+        'description': ai.get('description') or '',
+        'category': category,
+        'priority': priority,
+        'owner_name': ai.get('owner_name') or 'Nour',
+        'due_date': due or parse_due_date(clean),
+    }
+
+
+def create_task_from_text(text: str) -> Task:
+    details = extract_task_details(text)
     task = Task.objects.create(
-        title=clean[:255],
-        category=guess_category(clean),
-        due_date=due,
-        priority=Task.Priority.MEDIUM,
-        owner_name='Nour',
+        title=details['title'],
+        description=details['description'],
+        category=details['category'],
+        due_date=details['due_date'],
+        priority=details['priority'],
+        owner_name=details['owner_name'],
         source='telegram',
     )
-    if due:
-        Reminder.objects.create(task=task, remind_at=due)
+    if details['due_date']:
+        Reminder.objects.create(task=task, remind_at=details['due_date'])
     return task
 
 
