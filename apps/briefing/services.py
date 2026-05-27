@@ -5,6 +5,16 @@ from apps.integrations.gitlab import radar_summary
 from apps.ai.ollama import generate
 
 
+def _looks_unusable_ai_reply(text: str) -> bool:
+    lower = (text or '').lower()
+    if not text or len(text.strip()) < 20:
+        return True
+    unsafe_markers = ['[date', '[location', '[specific', '[your name]', 'at a meeting', 'gmt']
+    if any(marker in lower for marker in unsafe_markers):
+        return True
+    return lower.strip() in ['no items.', 'no items']
+
+
 def _active_tasks():
     return Task.objects.filter(
         status__in=[Task.Status.OPEN, Task.Status.WAITING],
@@ -28,9 +38,15 @@ def build_briefing() -> str:
     raw.append('GitLab radar:')
     raw.append(gitlab)
 
-    prompt = 'Create a concise CEO morning briefing from this data. Use sections: Top Risks, Today, Follow-ups, GitLab.\n\n' + '\n'.join(raw)
+    prompt = (
+        'Create a concise CEO morning briefing from this data only. '
+        'Do not invent meetings, projects, people, tools, metrics, or dates. '
+        'If a section has no data, say "No items." '
+        'Use sections: Top Risks, Today, Follow-ups, GitLab.\n\n'
+        + '\n'.join(raw)
+    )
     ai = generate(prompt)
-    if ai.startswith('AI unavailable'):
+    if ai.startswith('AI unavailable') or _looks_unusable_ai_reply(ai):
         return '\n'.join(raw)
     return ai
 
@@ -60,18 +76,21 @@ def build_ceo_suggestions() -> str:
         radar_summary(),
     ]
     prompt = """
-You are a CEO chief-of-staff assistant. Based on the data below, suggest the next actions.
+You are a CEO chief-of-staff assistant. Based only on the data below, suggest the next actions.
+Do not invent meetings, clients, tools, projects, people, deadlines, or task details.
+Refer to real tasks by their shown task ID and title.
+If GitLab is not configured, only suggest configuring the GitLab token; do not describe GitLab risks.
 Return a concise list with:
 1. The top 3 decisions or follow-ups the CEO should handle today.
 2. Delegation suggestions.
 3. Risks that need escalation.
-4. Draft wording for one follow-up message if useful.
+4. Draft wording for one follow-up message if useful, using only the listed overdue or high-priority tasks.
 Keep it practical and approval-first. Do not invent facts.
 
 Data:
 """ + '\n'.join(raw)
     ai = generate(prompt)
-    if ai.startswith('AI unavailable'):
+    if ai.startswith('AI unavailable') or _looks_unusable_ai_reply(ai):
         return '\n'.join(raw)
     return ai
 
@@ -91,7 +110,7 @@ def build_followup_draft() -> str:
         + '\n'.join(overdue[:10])
     )
     ai = generate(prompt)
-    if not ai.startswith('AI unavailable'):
+    if not ai.startswith('AI unavailable') and not _looks_unusable_ai_reply(ai):
         return ai
 
     return (
