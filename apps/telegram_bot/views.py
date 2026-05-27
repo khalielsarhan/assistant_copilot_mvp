@@ -6,9 +6,8 @@ from django.utils import timezone
 from apps.telegram_bot.client import send_message
 from apps.tasks.models import Task
 from apps.tasks.services import create_task_from_text, format_task
-from apps.briefing.services import build_briefing, build_ceo_suggestions
+from apps.briefing.services import build_briefing, build_ceo_suggestions, build_followup_draft
 from apps.integrations.gitlab import radar_summary
-from apps.ai.ollama import generate
 
 HELP = """CEO Copilot commands:
 /help
@@ -73,9 +72,7 @@ def handle_message(chat_id: str, text: str) -> str:
         return radar_summary()
 
     if text == '/draft_followup':
-        overdue = [format_task(t) for t in Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING]) if t.is_overdue()]
-        prompt = 'Draft a short professional follow-up message for these overdue tasks. Do not be aggressive.\n\n' + '\n'.join(overdue[:10])
-        return generate(prompt)
+        return build_followup_draft()
 
     # Fallback: capture as task by default to reduce friction.
     task = create_task_from_text(text)

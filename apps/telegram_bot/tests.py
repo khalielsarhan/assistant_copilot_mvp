@@ -55,3 +55,18 @@ class TelegramWebhookTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Top action", response.json()["reply"])
         mocked_suggestions.assert_called_once()
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    @patch("apps.telegram_bot.views.build_followup_draft", return_value="Hi team, quick follow-up.")
+    def test_draft_followup_command_returns_draft(self, mocked_draft):
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "/draft_followup"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("quick follow-up", response.json()["reply"])
+        mocked_draft.assert_called_once()

@@ -74,3 +74,28 @@ Data:
     if ai.startswith('AI unavailable'):
         return '\n'.join(raw)
     return ai
+
+
+def build_followup_draft() -> str:
+    overdue = [
+        format_task(t)
+        for t in Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING])
+        if t.is_overdue()
+    ]
+    if not overdue:
+        return 'No overdue tasks to follow up on.'
+
+    prompt = (
+        'Draft a short professional follow-up message for these overdue tasks. '
+        'Ask for status, blockers, and expected completion date. Do not be aggressive.\n\n'
+        + '\n'.join(overdue[:10])
+    )
+    ai = generate(prompt)
+    if not ai.startswith('AI unavailable'):
+        return ai
+
+    return (
+        'Hi team, quick follow-up on the pending overdue items below.\n'
+        'Please send me a short update today with current status, blockers, and expected completion date.\n\n'
+        + '\n\n'.join(overdue[:10])
+    )
