@@ -6,12 +6,15 @@ from django.utils import timezone
 from apps.telegram_bot.client import send_message
 from apps.tasks.models import Task
 from apps.tasks.services import (
+    add_reminder_for_task_from_text,
     cancel_all_open_tasks,
     cancel_task,
     complete_task,
+    create_project_from_text,
     create_task_from_text,
     find_active_tasks,
     format_task,
+    list_projects,
 )
 from apps.briefing.services import build_briefing, build_ceo_suggestions, build_followup_draft
 from apps.integrations.gitlab import radar_summary
@@ -26,6 +29,7 @@ HELP = """CEO Copilot commands:
 /done Ahmed follow up
 /cancel Ahmed follow up
 /remove Ahmed follow up
+/projects
 /briefing
 /suggest
 /gitlab
@@ -106,6 +110,16 @@ def _is_cancel_all_request(text: str) -> bool:
     return any(lower.startswith(word) for word in cancel_words) and any(phrase in lower for phrase in target_phrases)
 
 
+def _is_project_request(text: str) -> bool:
+    lower = text.lower()
+    return 'project' in lower and any(word in lower for word in ['called', 'named', 'folder'])
+
+
+def _is_reminder_request(text: str) -> bool:
+    lower = text.lower()
+    return 'reminder' in lower and ('task' in lower or '#' in lower)
+
+
 def handle_message(chat_id: str, text: str) -> str:
     text = (text or '').strip()
     lower = text.lower()
@@ -116,23 +130,41 @@ def handle_message(chat_id: str, text: str) -> str:
     if _is_greeting(text):
         return 'Hi. Send /help for commands, or /add followed by a task.'
 
+    if lower == '/projects':
+        return list_projects()
+
+    if _is_project_request(text):
+        project, created = create_project_from_text(text)
+        if not project:
+            return 'What is the project name? Example: create project called IOLO'
+        action = 'Created' if created else 'Found existing'
+        return (
+            f'{action} project folder: {project.name}\n'
+            f'Use: /add task title for project {project.name} tomorrow\n'
+            f'Use: add reminder for task TASK_ID tomorrow 10am'
+        )
+
+    if _is_reminder_request(text):
+        reminder, response = add_reminder_for_task_from_text(text)
+        return response
+
     if lower.startswith('/add') or lower.startswith('remind me to'):
         if text == '/add':
             return 'Usage: /add Follow up with Ahmed tomorrow'
         task = create_task_from_text(text)
         return 'Created task:\n' + format_task(task)
 
-    if text == '/tasks':
+    if lower == '/tasks':
         qs = Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING]).order_by('due_date', '-updated_at')[:10]
         return '\n\n'.join(format_task(t) for t in qs) or 'No open tasks.'
 
-    if text == '/today':
+    if lower == '/today':
         now = timezone.now()
         end = now.replace(hour=23, minute=59, second=59, microsecond=0)
         qs = Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING], due_date__lte=end).order_by('due_date')[:10]
         return '\n\n'.join(format_task(t) for t in qs) or 'No tasks due today.'
 
-    if text == '/overdue':
+    if lower == '/overdue':
         qs = [t for t in Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING]).order_by('due_date') if t.is_overdue()]
         return '\n\n'.join(format_task(t) for t in qs[:10]) or 'No overdue tasks.'
 

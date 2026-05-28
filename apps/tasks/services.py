@@ -1,7 +1,8 @@
+import re
 from datetime import timedelta
 from dateutil.parser import parse
 from django.utils import timezone
-from apps.tasks.models import Task
+from apps.tasks.models import Project, Task
 from apps.reminders.models import Reminder
 from apps.ai.ollama import generate_json
 
@@ -58,6 +59,8 @@ def _strip_capture_prefix(text: str) -> str:
     clean = text.replace('/add', '', 1).strip()
     if clean.lower().startswith('remind me to '):
         clean = clean[13:].strip()
+    clean = re.sub(r'\s+for\s+project\s+[a-zA-Z0-9][a-zA-Z0-9_-]*', ' ', clean, flags=re.IGNORECASE)
+    clean = ' '.join(clean.split())
     return clean
 
 
@@ -115,8 +118,20 @@ Message: {clean}
     }
 
 
+def extract_project_reference(text: str) -> Project | None:
+    match = re.search(r'\bfor\s+project\s+([a-zA-Z0-9][a-zA-Z0-9_-]*)', text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    name = match.group(1).strip()
+    try:
+        return Project.objects.get(name__iexact=name)
+    except Project.DoesNotExist:
+        return None
+
+
 def create_task_from_text(text: str) -> Task:
     details = extract_task_details(text)
+    project = extract_project_reference(text)
     task = Task.objects.create(
         title=details['title'],
         description=details['description'],
@@ -124,6 +139,7 @@ def create_task_from_text(text: str) -> Task:
         due_date=details['due_date'],
         priority=details['priority'],
         owner_name=details['owner_name'],
+        project=project,
         source='telegram',
     )
     if details['due_date']:
@@ -133,7 +149,80 @@ def create_task_from_text(text: str) -> Task:
 
 def format_task(task: Task) -> str:
     due = task.due_date.strftime('%Y-%m-%d %H:%M') if task.due_date else 'No due date'
-    return f'#{task.id} [{task.status}] {task.title}\nCategory: {task.category} | Due: {due}'
+    project = f' | Project: {task.project.name}' if task.project else ''
+    return f'#{task.id} [{task.status}] {task.title}\nCategory: {task.category}{project} | Due: {due}'
+
+
+def extract_project_name(text: str) -> str:
+    patterns = [
+        r'\bproject\s+(?:called|named)\s+([a-zA-Z0-9][a-zA-Z0-9_-]*)',
+        r'\bfolder\s+(?:called|named|for)\s+([a-zA-Z0-9][a-zA-Z0-9_-]*)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return ''
+
+
+def create_project_from_text(text: str) -> tuple[Project | None, bool]:
+    name = extract_project_name(text)
+    if not name:
+        return None, False
+    project, created = Project.objects.get_or_create(
+        name=name,
+        defaults={'owner_name': 'Nour'},
+    )
+    return project, created
+
+
+def format_project(project: Project) -> str:
+    active_count = project.tasks.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING]).count()
+    return f'#{project.id} {project.name} [{project.status}] Health: {project.health} | Open tasks: {active_count}'
+
+
+def list_projects(limit: int = 10) -> str:
+    projects = Project.objects.order_by('-updated_at')[:limit]
+    return '\n'.join(format_project(project) for project in projects) or 'No projects yet.'
+
+
+def attach_project_to_task(task: Task, project: Project) -> Task:
+    task.project = project
+    task.save(update_fields=['project', 'updated_at'])
+    return task
+
+
+def extract_task_id(text: str) -> int | None:
+    match = re.search(r'(?:task\s*#?|#)\s*(\d+)\b', text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def parse_reminder_date(text: str, task_id: int):
+    cleaned = re.sub(rf'(?:task\s*#?|#)\s*{task_id}\b', ' ', text, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\b(add|set|create|a|the|reminder|for|to|on|task|can|you|please)\b', ' ', cleaned, flags=re.IGNORECASE)
+    cleaned = ' '.join(cleaned.split())
+    return parse_due_date(cleaned) if cleaned else None
+
+
+def add_reminder_for_task_from_text(text: str) -> tuple[Reminder | None, str]:
+    task_id = extract_task_id(text)
+    if not task_id:
+        return None, 'Which task should I remind you about? Example: add reminder for task 15 tomorrow 10am'
+    try:
+        task = Task.objects.get(id=task_id)
+    except Task.DoesNotExist:
+        return None, f'Task #{task_id} was not found.'
+    if task.status not in [Task.Status.OPEN, Task.Status.WAITING]:
+        return None, f'Task #{task.id} is {task.status.lower()}, so I did not add a reminder.'
+
+    remind_at = parse_reminder_date(text, task_id)
+    if not remind_at:
+        return None, f'When should I remind you about task #{task.id}? Example: add reminder for task {task.id} tomorrow 10am'
+
+    reminder = Reminder.objects.create(task=task, remind_at=remind_at)
+    return reminder, f'Reminder added for task #{task.id}: {task.title}\nAt: {remind_at.strftime("%Y-%m-%d %H:%M")}'
 
 
 def _normalize_lookup_text(text: str) -> str:

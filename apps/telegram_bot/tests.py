@@ -4,7 +4,8 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from apps.tasks.models import Task
+from apps.reminders.models import Reminder
+from apps.tasks.models import Project, Task
 
 
 class TelegramWebhookTests(TestCase):
@@ -133,6 +134,76 @@ class TelegramWebhookTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("No open tasks", response.json()["reply"])
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_project_request_creates_project_not_task(self):
+        payload = {
+            "message": {
+                "chat": {"id": "local-test"},
+                "text": "I have a project called IOLO i want you to create a folder for it and attach tasks to it and reminders",
+            }
+        }
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Created project folder: IOLO", response.json()["reply"])
+        self.assertEqual(Project.objects.filter(name="IOLO").count(), 1)
+        self.assertEqual(Task.objects.count(), 0)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_reminder_request_without_due_date_asks_when(self):
+        task = Task.objects.create(title="Create IOLO task folder")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": f"Can you add a reminder for task {task.id}"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("When should I remind you", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 1)
+        self.assertEqual(Reminder.objects.count(), 0)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_reminder_request_with_due_date_creates_reminder_not_task(self):
+        task = Task.objects.create(title="Create IOLO task folder")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": f"add reminder for task {task.id} tomorrow"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Reminder added for task #{task.id}", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 1)
+        self.assertEqual(Reminder.objects.count(), 1)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    @patch("apps.tasks.services.generate_json", return_value={})
+    def test_add_task_can_attach_to_project(self, mocked_generate_json):
+        project = Project.objects.create(name="IOLO")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "/add prepare kickoff for project IOLO tomorrow"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task = Task.objects.get()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(task.project, project)
+        self.assertEqual(task.title, "prepare kickoff tomorrow")
+        self.assertIn("Project: IOLO", response.json()["reply"])
 
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
     def test_done_command_can_match_title(self):

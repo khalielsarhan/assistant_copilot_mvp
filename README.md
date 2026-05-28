@@ -249,6 +249,8 @@ The radar checks open issues, stale issues older than 3 days, unassigned issues,
 /done Ahmed follow up
 /cancel Ahmed follow up
 /remove Ahmed follow up
+/projects
+/add prepare kickoff for project IOLO tomorrow
 /briefing
 /suggest
 /gitlab
@@ -257,6 +259,7 @@ The radar checks open issues, stale issues older than 3 days, unassigned issues,
 
 Plain messages are captured as tasks by default.
 Action phrases like `remove the Ahmed follow up task` and `mark Hue integration done` are interpreted as task updates instead of new tasks.
+Project phrases like `create project called IOLO` create a project folder. Reminder phrases like `add reminder for task 15 tomorrow` add reminders to existing tasks.
 
 ## Daily Briefing And Reminders
 
