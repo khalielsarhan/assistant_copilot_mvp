@@ -155,6 +155,7 @@ def _normalize_lookup_text(text: str) -> str:
 def _lookup_tokens(text: str) -> set[str]:
     stop_words = {
         'a', 'an', 'and', 'for', 'me', 'my', 'of', 'on', 'the', 'to', 'with',
+        'follow', 'up', 'followup',
         'remove', 'delete', 'cancel', 'drop', 'done', 'complete', 'finish',
         'finished', 'mark', 'as',
     }

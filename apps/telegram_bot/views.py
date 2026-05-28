@@ -24,6 +24,7 @@ HELP = """CEO Copilot commands:
 /done 12
 /done Ahmed follow up
 /cancel Ahmed follow up
+/remove Ahmed follow up
 /briefing
 /suggest
 /gitlab
@@ -54,15 +55,60 @@ def _extract_action_query(text: str, command: str, verbs: list[str]) -> str:
     return text
 
 
+def _is_greeting(text: str) -> bool:
+    return text.lower().strip() in {
+        'hi',
+        'hello',
+        'hey',
+        'salam',
+        'السلام عليكم',
+        'thanks',
+        'thank you',
+        'ok',
+        'okay',
+    }
+
+
+def _looks_like_task(text: str) -> bool:
+    lower = text.lower()
+    task_markers = [
+        'follow up',
+        'follow-up',
+        'remind',
+        'call ',
+        'email ',
+        'send ',
+        'review ',
+        'approve ',
+        'check ',
+        'prepare ',
+        'draft ',
+        'schedule ',
+        'book ',
+        'pay ',
+        'invoice',
+        'client',
+        'urgent',
+        'asap',
+        'tomorrow',
+        'today',
+        'next week',
+        'deadline',
+    ]
+    return any(marker in lower for marker in task_markers)
+
+
 def handle_message(chat_id: str, text: str) -> str:
     text = (text or '').strip()
     lower = text.lower()
     if not text:
         return 'Send /help to see commands, or /add followed by a task.'
-    if text in ['/start', '/help']:
+    if lower in ['/start', '/help']:
         return HELP
+    if _is_greeting(text):
+        return 'Hi. Send /help for commands, or /add followed by a task.'
 
-    if text.startswith('/add') or text.lower().startswith('remind me to'):
+    if lower.startswith('/add') or lower.startswith('remind me to'):
         if text == '/add':
             return 'Usage: /add Follow up with Ahmed tomorrow'
         task = create_task_from_text(text)
@@ -120,21 +166,23 @@ def handle_message(chat_id: str, text: str) -> str:
         cancel_task(task)
         return f'Removed: #{task.id} {task.title}'
 
-    if text == '/briefing':
+    if lower == '/briefing':
         return build_briefing()
 
-    if text == '/suggest':
+    if lower == '/suggest':
         return build_ceo_suggestions()
 
-    if text == '/gitlab':
+    if lower == '/gitlab':
         return radar_summary()
 
-    if text == '/draft_followup':
+    if lower == '/draft_followup':
         return build_followup_draft()
 
-    # Fallback: capture as task by default to reduce friction.
-    task = create_task_from_text(text)
-    return 'Captured as task:\n' + format_task(task)
+    if _looks_like_task(text):
+        task = create_task_from_text(text)
+        return 'Captured as task:\n' + format_task(task)
+
+    return 'I did not create a task. Use /add for tasks, /tasks to list them, or /help for commands.'
 
 
 @csrf_exempt
