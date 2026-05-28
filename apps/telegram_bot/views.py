@@ -6,6 +6,7 @@ from django.utils import timezone
 from apps.telegram_bot.client import send_message
 from apps.tasks.models import Task
 from apps.tasks.services import (
+    cancel_all_open_tasks,
     cancel_task,
     complete_task,
     create_task_from_text,
@@ -98,6 +99,13 @@ def _looks_like_task(text: str) -> bool:
     return any(marker in lower for marker in task_markers)
 
 
+def _is_cancel_all_request(text: str) -> bool:
+    lower = ' '.join(text.lower().replace('-', ' ').split())
+    cancel_words = ['remove', 'delete', 'cancel', 'clear']
+    target_phrases = ['all open tasks', 'all tasks', 'everything', 'all reminders']
+    return any(lower.startswith(word) for word in cancel_words) and any(phrase in lower for phrase in target_phrases)
+
+
 def handle_message(chat_id: str, text: str) -> str:
     text = (text or '').strip()
     lower = text.lower()
@@ -146,6 +154,12 @@ def handle_message(chat_id: str, text: str) -> str:
             task = matches[0]
         complete_task(task)
         return f'Done: #{task.id} {task.title}'
+
+    if _is_cancel_all_request(text):
+        count = cancel_all_open_tasks()
+        if count == 0:
+            return 'No open tasks to remove.'
+        return f'Removed {count} open task{"s" if count != 1 else ""}.'
 
     if lower.startswith('/cancel') or lower.startswith('/delete') or lower.startswith('/remove') or lower.startswith('cancel ') or lower.startswith('delete ') or lower.startswith('remove ') or lower.startswith('drop '):
         parts = text.split()

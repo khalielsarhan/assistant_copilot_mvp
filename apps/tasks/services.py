@@ -208,3 +208,16 @@ def complete_task(task: Task) -> Task:
     task.save(update_fields=['status', 'updated_at'])
     task.reminders.filter(status=Reminder.Status.PENDING).update(status=Reminder.Status.CANCELLED)
     return task
+
+
+def cancel_all_open_tasks() -> int:
+    tasks = Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING])
+    task_ids = list(tasks.values_list('id', flat=True))
+    if not task_ids:
+        return 0
+    count = tasks.update(status=Task.Status.CANCELLED)
+    Reminder.objects.filter(
+        task_id__in=task_ids,
+        status=Reminder.Status.PENDING,
+    ).update(status=Reminder.Status.CANCELLED)
+    return count

@@ -104,6 +104,37 @@ class TelegramWebhookTests(TestCase):
         self.assertEqual(Task.objects.filter(status=Task.Status.OPEN).count(), 1)
 
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_remove_all_open_tasks_cancels_every_open_task(self):
+        Task.objects.create(title="Urgent client follow up")
+        Task.objects.create(title="Review Hue integration", status=Task.Status.WAITING)
+        Task.objects.create(title="Already done", status=Task.Status.DONE)
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "Remove all open tasks"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Removed 2 open tasks", response.json()["reply"])
+        self.assertEqual(Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING]).count(), 0)
+        self.assertEqual(Task.objects.filter(status=Task.Status.DONE).count(), 1)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_remove_all_open_tasks_when_empty(self):
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "Remove all open tasks"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("No open tasks", response.json()["reply"])
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
     def test_done_command_can_match_title(self):
         task = Task.objects.create(title="Review Hue integration direction")
         payload = {"message": {"chat": {"id": "local-test"}, "text": "/done Hue integration"}}
