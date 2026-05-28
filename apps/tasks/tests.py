@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.tasks.models import Task
-from apps.tasks.services import create_task_from_text
+from apps.tasks.services import cancel_task, create_task_from_text, find_active_tasks
 
 
 class HomeViewTests(TestCase):
@@ -64,3 +64,22 @@ class TaskCaptureTests(TestCase):
         self.assertEqual(task.priority, Task.Priority.URGENT)
         self.assertEqual(task.title, "urgent client follow up with Sara tomorrow")
         self.assertEqual(task.due_date.date(), (timezone.localdate() + timezone.timedelta(days=1)))
+
+    def test_find_active_tasks_returns_clear_best_match(self):
+        ahmed = Task.objects.create(title="Follow up with Ahmed tomorrow")
+        Task.objects.create(title="Urgent client follow up")
+
+        matches = find_active_tasks("Ahmed follow up")
+
+        self.assertEqual(matches, [ahmed])
+
+    def test_cancel_task_cancels_pending_reminders(self):
+        task = Task.objects.create(title="Follow up with Ahmed tomorrow", due_date=timezone.now())
+        reminder = task.reminders.create(remind_at=timezone.now())
+
+        cancel_task(task)
+
+        task.refresh_from_db()
+        reminder.refresh_from_db()
+        self.assertEqual(task.status, Task.Status.CANCELLED)
+        self.assertEqual(reminder.status, "CANCELLED")

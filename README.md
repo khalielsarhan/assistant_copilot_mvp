@@ -246,6 +246,9 @@ The radar checks open issues, stale issues older than 3 days, unassigned issues,
 /today
 /overdue
 /done 12
+/done Ahmed follow up
+/cancel Ahmed follow up
+/remove Ahmed follow up
 /briefing
 /suggest
 /gitlab
@@ -253,6 +256,7 @@ The radar checks open issues, stale issues older than 3 days, unassigned issues,
 ```
 
 Plain messages are captured as tasks by default.
+Action phrases like `remove the Ahmed follow up task` and `mark Hue integration done` are interpreted as task updates instead of new tasks.
 
 ## Daily Briefing And Reminders
 

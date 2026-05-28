@@ -63,6 +63,8 @@ def _strip_capture_prefix(text: str) -> str:
 
 def extract_task_details(text: str) -> dict:
     clean = _strip_capture_prefix(text)
+    if not clean:
+        clean = 'Untitled task'
     today = timezone.localdate().isoformat()
     prompt = f"""
 Extract one CEO assistant task from this message.
@@ -101,6 +103,8 @@ Message: {clean}
     )
     ai_title = (ai.get('title') or '').strip()
     title = ai_title if len(ai_title.split()) >= 3 else clean
+    if not title.strip():
+        title = clean
     return {
         'title': title[:255],
         'description': ai.get('description') or '',
@@ -130,3 +134,76 @@ def create_task_from_text(text: str) -> Task:
 def format_task(task: Task) -> str:
     due = task.due_date.strftime('%Y-%m-%d %H:%M') if task.due_date else 'No due date'
     return f'#{task.id} [{task.status}] {task.title}\nCategory: {task.category} | Due: {due}'
+
+
+def _normalize_lookup_text(text: str) -> str:
+    lower = text.lower().strip()
+    for phrase in [
+        'please',
+        'the task',
+        'task',
+        'reminder',
+        'remind me to',
+        'follow-up',
+    ]:
+        lower = lower.replace(phrase, ' ')
+    for char in '#,.:;!?':
+        lower = lower.replace(char, ' ')
+    return ' '.join(lower.split())
+
+
+def _lookup_tokens(text: str) -> set[str]:
+    stop_words = {
+        'a', 'an', 'and', 'for', 'me', 'my', 'of', 'on', 'the', 'to', 'with',
+        'remove', 'delete', 'cancel', 'drop', 'done', 'complete', 'finish',
+        'finished', 'mark', 'as',
+    }
+    return {word for word in _normalize_lookup_text(text).split() if word not in stop_words}
+
+
+def find_active_tasks(query: str, limit: int = 5):
+    query = _normalize_lookup_text(query)
+    tokens = _lookup_tokens(query)
+    if not tokens:
+        return []
+
+    active = Task.objects.filter(
+        status__in=[Task.Status.OPEN, Task.Status.WAITING],
+    ).order_by('due_date', '-updated_at')
+
+    matches = []
+    for task in active:
+        title = _normalize_lookup_text(task.title)
+        title_tokens = set(title.split())
+        if query and query in title:
+            score = 100 + len(query)
+        else:
+            overlap = tokens & title_tokens
+            if not overlap:
+                continue
+            score = len(overlap) * 10
+            if tokens <= title_tokens:
+                score += 25
+        matches.append((score, task))
+
+    matches.sort(key=lambda item: item[0], reverse=True)
+    if not matches:
+        return []
+    if len(matches) == 1 or matches[0][0] > matches[1][0]:
+        return [matches[0][1]]
+    top_score = matches[0][0]
+    return [task for score, task in matches[:limit] if score == top_score]
+
+
+def cancel_task(task: Task) -> Task:
+    task.status = Task.Status.CANCELLED
+    task.save(update_fields=['status', 'updated_at'])
+    task.reminders.filter(status=Reminder.Status.PENDING).update(status=Reminder.Status.CANCELLED)
+    return task
+
+
+def complete_task(task: Task) -> Task:
+    task.status = Task.Status.DONE
+    task.save(update_fields=['status', 'updated_at'])
+    task.reminders.filter(status=Reminder.Status.PENDING).update(status=Reminder.Status.CANCELLED)
+    return task

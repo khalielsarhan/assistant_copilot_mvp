@@ -70,3 +70,64 @@ class TelegramWebhookTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("quick follow-up", response.json()["reply"])
         mocked_draft.assert_called_once()
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_natural_language_remove_cancels_matching_task(self):
+        task = Task.objects.create(title="Follow up with Ahmed tomorrow")
+        Task.objects.create(title="Urgent client follow up")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "remove the Ahmed follow up task"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Removed: #{task.id}", response.json()["reply"])
+        self.assertEqual(task.status, Task.Status.CANCELLED)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_done_command_can_match_title(self):
+        task = Task.objects.create(title="Review Hue integration direction")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "/done Hue integration"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Done: #{task.id}", response.json()["reply"])
+        self.assertEqual(task.status, Task.Status.DONE)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_empty_message_does_not_create_task(self):
+        payload = {"message": {"chat": {"id": "local-test"}, "text": ""}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("/help", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 0)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_add_without_text_returns_usage(self):
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "/add"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Usage", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 0)
