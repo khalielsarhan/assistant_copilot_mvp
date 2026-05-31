@@ -8,6 +8,7 @@ from apps.tasks.models import Task
 from apps.tasks.services import (
     add_reminder_for_task_from_text,
     cancel_all_open_tasks,
+    cancel_pending_reminders,
     cancel_task,
     complete_task,
     create_project_from_text,
@@ -106,7 +107,7 @@ def _looks_like_task(text: str) -> bool:
 def _is_cancel_all_request(text: str) -> bool:
     lower = ' '.join(text.lower().replace('-', ' ').split())
     cancel_words = ['remove', 'delete', 'cancel', 'clear']
-    target_phrases = ['all open tasks', 'all tasks', 'everything', 'all reminders']
+    target_phrases = ['all open tasks', 'all tasks', 'everything']
     return any(lower.startswith(word) for word in cancel_words) and any(phrase in lower for phrase in target_phrases)
 
 
@@ -118,6 +119,21 @@ def _is_project_request(text: str) -> bool:
 def _is_reminder_request(text: str) -> bool:
     lower = text.lower()
     return 'reminder' in lower and ('task' in lower or '#' in lower)
+
+
+def _is_reminder_cleanup_request(text: str) -> bool:
+    lower = ' '.join(text.lower().replace('-', ' ').split())
+    cleanup_words = ['clean', 'clear', 'remove', 'delete', 'cancel']
+    return any(lower.startswith(word) for word in cleanup_words) and 'reminder' in lower
+
+
+def _extract_except_query(text: str) -> str:
+    lower = text.lower()
+    marker = ' except '
+    if marker not in lower:
+        return ''
+    start = lower.index(marker) + len(marker)
+    return text[start:].strip()
 
 
 def handle_message(chat_id: str, text: str) -> str:
@@ -147,6 +163,15 @@ def handle_message(chat_id: str, text: str) -> str:
     if _is_reminder_request(text):
         reminder, response = add_reminder_for_task_from_text(text)
         return response
+
+    if _is_reminder_cleanup_request(text):
+        except_query = _extract_except_query(text)
+        count = cancel_pending_reminders(except_query=except_query)
+        if count == 0:
+            return 'No pending reminders to clean.'
+        if except_query:
+            return f'Cleaned {count} pending reminder{"s" if count != 1 else ""}. Kept reminders matching: {except_query}'
+        return f'Cleaned {count} pending reminder{"s" if count != 1 else ""}.'
 
     if lower.startswith('/add') or lower.startswith('remind me to'):
         if text == '/add':

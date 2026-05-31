@@ -17,6 +17,14 @@ services:
       - db
       - redis
 
+  telegram-poller:
+    build: .
+    command: python manage.py poll_telegram --drop-webhook
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+
   celery-beat:
     build: .
     command: celery -A config beat -l info

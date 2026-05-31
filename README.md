@@ -61,6 +61,8 @@ Other useful URLs:
 - Admin: `http://localhost:8000/admin/`
 - Telegram webhook health: `http://localhost:8000/telegram/webhook/`
 
+Local Telegram messages are received by the `telegram-poller` Docker service. It uses Telegram long polling and deletes any old webhook on startup, so you do not need ngrok or Cloudflare Tunnel for local bot replies.
+
 ## Environment Variables
 
 Copy the example file if it does not exist:
@@ -142,9 +144,10 @@ TELEGRAM_ALLOWED_CHAT_ID=123456789
 
 Only this chat ID is authorized. Other Telegram chats receive `403 Unauthorized`.
 
-Expose your local app so Telegram can reach it. Example with ngrok:
+The default local setup uses long polling, so you can skip public webhooks entirely. If you specifically want webhook mode instead, stop the `telegram-poller` service and expose your local app. Example with ngrok:
 
 ```bash
+docker compose stop telegram-poller
 ngrok http 8000
 ```
 

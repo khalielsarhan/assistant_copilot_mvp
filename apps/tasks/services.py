@@ -225,6 +225,29 @@ def add_reminder_for_task_from_text(text: str) -> tuple[Reminder | None, str]:
     return reminder, f'Reminder added for task #{task.id}: {task.title}\nAt: {remind_at.strftime("%Y-%m-%d %H:%M")}'
 
 
+def _matches_query(title: str, query: str) -> bool:
+    normalized_title = _normalize_lookup_text(title)
+    normalized_query = _normalize_lookup_text(query)
+    tokens = _lookup_tokens(normalized_query)
+    if not tokens:
+        return False
+    if normalized_query and normalized_query in normalized_title:
+        return True
+    return tokens <= set(normalized_title.split())
+
+
+def cancel_pending_reminders(except_query: str = '') -> int:
+    pending = Reminder.objects.filter(status=Reminder.Status.PENDING).select_related('task')
+    count = 0
+    for reminder in pending:
+        if except_query and _matches_query(reminder.task.title, except_query):
+            continue
+        reminder.status = Reminder.Status.CANCELLED
+        reminder.save(update_fields=['status'])
+        count += 1
+    return count
+
+
 def _normalize_lookup_text(text: str) -> str:
     lower = text.lower().strip()
     for phrase in [

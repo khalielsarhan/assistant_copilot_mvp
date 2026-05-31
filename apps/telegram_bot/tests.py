@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import requests
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.telegram_bot.client import get_updates, send_message
 from apps.reminders.models import Reminder
@@ -211,6 +212,42 @@ class TelegramWebhookTests(TestCase):
         self.assertIn(f"Reminder added for task #{task.id}", response.json()["reply"])
         self.assertEqual(Task.objects.count(), 1)
         self.assertEqual(Reminder.objects.count(), 1)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_clean_reminders_cancels_pending_reminders_not_tasks(self):
+        task = Task.objects.create(title="Urgent client follow up")
+        Reminder.objects.create(task=task, remind_at=timezone.now())
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "Clean the reminders"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Cleaned 1 pending reminder", response.json()["reply"])
+        self.assertEqual(task.status, Task.Status.OPEN)
+        self.assertEqual(Reminder.objects.filter(status=Reminder.Status.PENDING).count(), 0)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_clean_reminders_except_query_keeps_matching_reminder(self):
+        steering = Task.objects.create(title="Preparation of Steering Deck")
+        other = Task.objects.create(title="Urgent client follow up")
+        Reminder.objects.create(task=steering, remind_at=timezone.now())
+        Reminder.objects.create(task=other, remind_at=timezone.now())
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "Clean up reminders except for steering deck"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Cleaned 1 pending reminder", response.json()["reply"])
+        self.assertEqual(Reminder.objects.filter(status=Reminder.Status.PENDING).get().task, steering)
 
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
     @patch("apps.tasks.services.generate_json", return_value={})
