@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_OPTIONS = {
-    'temperature': 0.2,
+    'temperature': getattr(settings, 'OLLAMA_TEMPERATURE', 0.5),
     'top_p': 0.8,
     'num_ctx': 4096,
 }

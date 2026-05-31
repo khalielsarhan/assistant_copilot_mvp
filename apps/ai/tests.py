@@ -6,7 +6,7 @@ from apps.ai.ollama import generate, generate_json
 
 
 class OllamaTests(SimpleTestCase):
-    @override_settings(OLLAMA_BASE_URL="http://ollama.local", OLLAMA_MODEL="qwen-test")
+    @override_settings(OLLAMA_BASE_URL="http://ollama.local", OLLAMA_MODEL="qwen-test", OLLAMA_TEMPERATURE=0.5)
     @patch("apps.ai.ollama.requests.post")
     def test_generate_sends_chat_payload(self, mock_post):
         response = Mock()
@@ -21,7 +21,7 @@ class OllamaTests(SimpleTestCase):
         _, kwargs = mock_post.call_args
         self.assertEqual(kwargs["json"]["model"], "qwen-test")
         self.assertEqual(kwargs["json"]["messages"][1]["content"], "Summarize this")
-        self.assertEqual(kwargs["json"]["options"]["temperature"], 0.2)
+        self.assertEqual(kwargs["json"]["options"]["temperature"], 0.5)
 
     @override_settings(OLLAMA_BASE_URL="http://ollama.local", OLLAMA_MODEL="qwen-test")
     @patch("apps.ai.ollama.requests.post", side_effect=Exception("offline"))
