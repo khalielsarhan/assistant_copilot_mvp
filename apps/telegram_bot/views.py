@@ -5,7 +5,7 @@ from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from apps.telegram_bot.client import send_message
-from apps.tasks.models import Task
+from apps.tasks.models import Project, Task
 from apps.tasks.services import (
     add_reminder_for_task_from_text,
     cancel_all_open_tasks,
@@ -17,6 +17,7 @@ from apps.tasks.services import (
     find_active_tasks,
     format_task,
     list_projects,
+    parse_due_date,
 )
 from apps.briefing.services import build_briefing, build_ceo_suggestions, build_followup_draft
 from apps.integrations.gitlab import radar_summary
@@ -77,6 +78,8 @@ def _is_greeting(text: str) -> bool:
 
 
 def _looks_like_task(text: str) -> bool:
+    if _is_question(text):
+        return False
     lower = text.lower()
     task_markers = [
         'follow up',
@@ -103,6 +106,16 @@ def _looks_like_task(text: str) -> bool:
         'deadline',
     ]
     return any(marker in lower for marker in task_markers)
+
+
+def _is_question(text: str) -> bool:
+    lower = text.lower().strip()
+    question_starts = (
+        'what ', 'what\'s ', 'whats ', 'which ', 'who ', 'when ', 'where ', 'why ', 'how ',
+        'do we ', 'did we ', 'are there ', 'is there ', 'can you show ', 'show me ',
+        'list ', 'give me ',
+    )
+    return lower.endswith('?') or lower.startswith(question_starts)
 
 
 def _is_cancel_all_request(text: str) -> bool:
@@ -160,6 +173,74 @@ def _format_created_tasks(tasks: list[Task]) -> str:
     return '\n\n'.join(format_task(task) for task in tasks)
 
 
+def _extract_project_from_query(text: str) -> Project | None:
+    lower = text.lower()
+    for project in Project.objects.all():
+        if re.search(rf'\b{re.escape(project.name.lower())}\b', lower):
+            return project
+    return None
+
+
+def _date_window_from_query(text: str):
+    lower = text.lower()
+    now = timezone.localtime()
+    if 'tomorrow' in lower:
+        start = (now + timezone.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start.replace(hour=23, minute=59, second=59, microsecond=999999)
+        label = 'tomorrow'
+        return start, end, label
+    if 'today' in lower:
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        label = 'today'
+        return start, end, label
+    due = parse_due_date(text)
+    if due:
+        due = timezone.localtime(due)
+        start = due.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = due.replace(hour=23, minute=59, second=59, microsecond=999999)
+        label = due.strftime('%Y-%m-%d')
+        return start, end, label
+    return None, None, ''
+
+
+def _is_status_query(text: str) -> bool:
+    lower = text.lower()
+    status_markers = [
+        'what do we have',
+        'what have we got',
+        'what is pending',
+        'what\'s pending',
+        'whats pending',
+        'show me',
+        'list',
+        'give me',
+        'regarding',
+        'for tomorrow',
+        'for today',
+    ]
+    return _is_question(text) and any(marker in lower for marker in status_markers)
+
+
+def _answer_status_query(text: str) -> str:
+    project = _extract_project_from_query(text)
+    start, end, date_label = _date_window_from_query(text)
+    qs = Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING])
+    scope = []
+    if project:
+        qs = qs.filter(project=project)
+        scope.append(project.name)
+    if start and end:
+        qs = qs.filter(due_date__gte=start, due_date__lte=end)
+        scope.append(date_label)
+    qs = qs.order_by('due_date', '-updated_at')[:10]
+
+    heading = ' '.join(scope) if scope else 'open tasks'
+    if not qs:
+        return f'No open tasks found for {heading}.'
+    return f'Open tasks for {heading}:\n\n' + '\n\n'.join(format_task(task) for task in qs)
+
+
 def handle_message(chat_id: str, text: str) -> str:
     text = (text or '').strip()
     lower = text.lower()
@@ -175,6 +256,9 @@ def handle_message(chat_id: str, text: str) -> str:
         return HELP
     if _is_greeting(text):
         return 'Hi. Send /help for commands, or /add followed by a task.'
+
+    if _is_status_query(text):
+        return _answer_status_query(text)
 
     if lower == '/projects':
         return list_projects()
@@ -300,7 +384,9 @@ def telegram_webhook(request):
     if request.method != 'POST':
         return JsonResponse({'ok': True})
     payload = json.loads(request.body.decode('utf-8'))
-    message = payload.get('message') or payload.get('edited_message') or {}
+    if 'edited_message' in payload and 'message' not in payload:
+        return JsonResponse({'ok': True, 'reply': 'Ignored edited message.'})
+    message = payload.get('message') or {}
     chat = message.get('chat') or {}
     chat_id = str(chat.get('id', ''))
     if not _authorized(chat_id):

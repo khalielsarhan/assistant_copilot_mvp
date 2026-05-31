@@ -1,3 +1,4 @@
+from datetime import timezone as dt_timezone
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -5,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.tasks.models import Task
-from apps.tasks.services import cancel_task, create_task_from_text, find_active_tasks
+from apps.tasks.services import cancel_task, create_task_from_text, find_active_tasks, format_task
 
 
 class HomeViewTests(TestCase):
@@ -83,3 +84,9 @@ class TaskCaptureTests(TestCase):
         reminder.refresh_from_db()
         self.assertEqual(task.status, Task.Status.CANCELLED)
         self.assertEqual(reminder.status, "CANCELLED")
+
+    def test_format_task_displays_local_time(self):
+        due = timezone.datetime(2026, 6, 2, 7, 0, tzinfo=dt_timezone.utc)
+        task = Task.objects.create(title="Clean trello board", due_date=due)
+
+        self.assertIn("Due: 2026-06-02 10:00", format_task(task))

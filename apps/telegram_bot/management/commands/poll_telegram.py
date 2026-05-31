@@ -37,7 +37,9 @@ class Command(BaseCommand):
                 updates = get_updates(offset=offset, timeout=30)
                 for update in updates:
                     offset = update['update_id'] + 1
-                    message = update.get('message') or update.get('edited_message') or {}
+                    if 'edited_message' in update and 'message' not in update:
+                        continue
+                    message = update.get('message') or {}
                     chat = message.get('chat') or {}
                     chat_id = str(chat.get('id', ''))
                     if not _authorized(chat_id):

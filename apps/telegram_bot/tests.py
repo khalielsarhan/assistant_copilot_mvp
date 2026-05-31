@@ -336,6 +336,40 @@ class TelegramWebhookTests(TestCase):
         self.assertIn("Created 2 tasks", response.json()["reply"])
 
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_project_tomorrow_question_lists_tasks_instead_of_creating_task(self):
+        project = Project.objects.create(name="IOLO")
+        due = (timezone.localtime() + timezone.timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        Task.objects.create(title="Clean trello board", project=project, due_date=due)
+        Task.objects.create(title="Unrelated task", due_date=due)
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "What do we have regarding IOLO for tomorrow?"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Open tasks for IOLO tomorrow", response.json()["reply"])
+        self.assertIn("Clean trello board", response.json()["reply"])
+        self.assertNotIn("Unrelated task", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 2)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_edited_message_is_ignored_to_avoid_duplicate_capture(self):
+        payload = {"edited_message": {"chat": {"id": "local-test"}, "text": "What do we have regarding IOLO for tomorrow?"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Ignored edited message", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 0)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
     def test_done_command_can_match_title(self):
         task = Task.objects.create(title="Review Hue integration direction")
         payload = {"message": {"chat": {"id": "local-test"}, "text": "/done Hue integration"}}

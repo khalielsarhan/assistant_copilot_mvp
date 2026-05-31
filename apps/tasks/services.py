@@ -158,7 +158,7 @@ def create_task_from_text(text: str) -> Task:
 
 
 def format_task(task: Task) -> str:
-    due = task.due_date.strftime('%Y-%m-%d %H:%M') if task.due_date else 'No due date'
+    due = timezone.localtime(task.due_date).strftime('%Y-%m-%d %H:%M') if task.due_date else 'No due date'
     project = f' | Project: {task.project.name}' if task.project else ''
     return f'#{task.id} [{task.status}] {task.title}\nCategory: {task.category}{project} | Due: {due}'
 
