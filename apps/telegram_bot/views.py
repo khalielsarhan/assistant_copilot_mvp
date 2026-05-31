@@ -63,6 +63,13 @@ def _extract_action_query(text: str, command: str, verbs: list[str]) -> str:
     return text
 
 
+def _extract_any_task_id(text: str) -> int | None:
+    match = re.search(r'(?:#|task\s*)?(\d+)\b', text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def _is_greeting(text: str) -> bool:
     return text.lower().strip() in {
         'hi',
@@ -222,6 +229,31 @@ def _is_status_query(text: str) -> bool:
     return _is_question(text) and any(marker in lower for marker in status_markers)
 
 
+def _is_access_question(text: str) -> bool:
+    lower = text.lower()
+    return _is_question(text) and any(phrase in lower for phrase in [
+        'do you have access',
+        'can you access',
+        'are you connected',
+        'can you see',
+    ])
+
+
+def _answer_access_question(text: str) -> str:
+    lower = text.lower()
+    project = _extract_project_from_query(text)
+    if 'trello' in lower:
+        project_part = f' for {project.name}' if project else ''
+        return (
+            f'I do not have Trello access{project_part} yet. '
+            'I can track tasks here, but Trello is not connected. '
+            'To enable it, add a Trello integration/token and board mapping.'
+        )
+    if 'gitlab' in lower:
+        return 'I can read GitLab only when GITLAB_TOKEN is configured and a GitLabIntegration is added in admin.'
+    return 'I only have access to the integrations configured in this app: Telegram, local tasks/reminders, Ollama, and configured GitLab projects.'
+
+
 def _answer_status_query(text: str) -> str:
     project = _extract_project_from_query(text)
     start, end, date_label = _date_window_from_query(text)
@@ -259,6 +291,9 @@ def handle_message(chat_id: str, text: str) -> str:
 
     if _is_status_query(text):
         return _answer_status_query(text)
+
+    if _is_access_question(text):
+        return _answer_access_question(text)
 
     if lower == '/projects':
         return list_projects()
@@ -316,17 +351,18 @@ def handle_message(chat_id: str, text: str) -> str:
         qs = [t for t in Task.objects.filter(status__in=[Task.Status.OPEN, Task.Status.WAITING]).order_by('due_date') if t.is_overdue()]
         return '\n\n'.join(format_task(t) for t in qs[:10]) or 'No overdue tasks.'
 
-    if lower.startswith('/done') or lower.startswith('done ') or lower.startswith('complete ') or lower.startswith('mark ') or lower.startswith('finish '):
+    if lower.startswith('/done') or lower.startswith('done ') or lower.startswith('complete ') or lower.startswith('mark ') or lower.startswith('finish ') or lower.startswith('close '):
         parts = text.split()
-        if len(parts) < 2:
+        task_id = _extract_any_task_id(text)
+        if len(parts) < 2 and not task_id:
             return 'Usage: /done task_id or /done task title'
-        if parts[1].isdigit():
+        if task_id:
             try:
-                task = Task.objects.get(id=int(parts[1]))
+                task = Task.objects.get(id=task_id)
             except Task.DoesNotExist:
                 return 'Task not found.'
         else:
-            query = _extract_action_query(text, '/done', ['done', 'complete', 'mark', 'finish'])
+            query = _extract_action_query(text, '/done', ['done', 'complete', 'mark', 'finish', 'close'])
             matches = find_active_tasks(query)
             response = _lookup_response(matches, 'complete')
             if response:
@@ -341,13 +377,15 @@ def handle_message(chat_id: str, text: str) -> str:
             return 'No open tasks to remove.'
         return f'Removed {count} open task{"s" if count != 1 else ""}.'
 
-    if lower.startswith('/cancel') or lower.startswith('/delete') or lower.startswith('/remove') or lower.startswith('cancel ') or lower.startswith('delete ') or lower.startswith('remove ') or lower.startswith('drop '):
+    cancel_words = ['cancel', 'delete', 'remove', 'drop']
+    if lower.startswith('/cancel') or lower.startswith('/delete') or lower.startswith('/remove') or any(word in lower.split() for word in cancel_words):
         parts = text.split()
-        if len(parts) < 2:
+        task_id = _extract_any_task_id(text)
+        if len(parts) < 2 and not task_id:
             return 'Usage: /cancel task_id or /cancel task title'
-        if parts[1].isdigit():
+        if task_id:
             try:
-                task = Task.objects.get(id=int(parts[1]))
+                task = Task.objects.get(id=task_id)
             except Task.DoesNotExist:
                 return 'Task not found.'
         else:

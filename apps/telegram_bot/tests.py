@@ -386,6 +386,53 @@ class TelegramWebhookTests(TestCase):
         self.assertEqual(task.status, Task.Status.DONE)
 
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_remove_can_use_hash_task_id_before_action_words(self):
+        task = Task.objects.create(title="Bad captured task")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": f"#{task.id} task please remove it"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Removed: #{task.id}", response.json()["reply"])
+        self.assertEqual(task.status, Task.Status.CANCELLED)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_close_can_use_plain_task_id(self):
+        task = Task.objects.create(title="Close this task")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": f"Close {task.id}"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Done: #{task.id}", response.json()["reply"])
+        self.assertEqual(task.status, Task.Status.DONE)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    def test_trello_access_question_returns_capability_answer(self):
+        Project.objects.create(name="IOLO")
+        payload = {"message": {"chat": {"id": "local-test"}, "text": "Do you have access to IOLO trello board?"}}
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("I do not have Trello access for IOLO yet", response.json()["reply"])
+        self.assertEqual(Task.objects.count(), 0)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
     def test_empty_message_does_not_create_task(self):
         payload = {"message": {"chat": {"id": "local-test"}, "text": ""}}
 
