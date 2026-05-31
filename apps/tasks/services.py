@@ -27,7 +27,7 @@ def guess_category(text: str) -> str:
 
 
 def parse_due_date(text: str):
-    now = timezone.now()
+    now = timezone.localtime()
     lower = text.lower()
     if 'tomorrow' in lower:
         return (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)

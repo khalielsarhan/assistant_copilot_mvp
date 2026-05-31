@@ -1,13 +1,38 @@
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from django.test import TestCase, override_settings
+import requests
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
+from apps.telegram_bot.client import get_updates, send_message
 from apps.reminders.models import Reminder
 from apps.tasks.models import Project, Task
 
 
+class TelegramClientTests(SimpleTestCase):
+    @override_settings(TELEGRAM_BOT_TOKEN="token")
+    @patch("apps.telegram_bot.client.requests.post")
+    @patch("apps.telegram_bot.client.logger.exception")
+    def test_send_message_returns_false_when_telegram_rejects_request(self, _mock_logger, mock_post):
+        response = Mock()
+        response.raise_for_status.side_effect = requests.RequestException("bad request")
+        mock_post.return_value = response
+
+        self.assertFalse(send_message("chat-id", "hello"))
+
+    @override_settings(TELEGRAM_BOT_TOKEN="token")
+    @patch("apps.telegram_bot.client.requests.get")
+    def test_get_updates_returns_result_list(self, mock_get):
+        response = Mock()
+        response.json.return_value = {"ok": True, "result": [{"update_id": 10}]}
+        response.raise_for_status.return_value = None
+        mock_get.return_value = response
+
+        self.assertEqual(get_updates(offset=9), [{"update_id": 10}])
+
+
+@override_settings(TELEGRAM_BOT_TOKEN="replace-me")
 class TelegramWebhookTests(TestCase):
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test", TELEGRAM_BOT_TOKEN="replace-me")
     @patch("apps.tasks.services.generate_json", return_value={})

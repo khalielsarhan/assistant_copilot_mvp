@@ -1,6 +1,7 @@
 COMPOSE=docker compose
+PROD_COMPOSE=$(COMPOSE) -f docker-compose.prod.yml --env-file .env.production
 
-.PHONY: setup up down restart recreate build migrate shell createsuperuser logs test check status
+.PHONY: setup up down restart recreate build migrate shell createsuperuser logs test check status prod-up prod-down prod-migrate prod-logs prod-status prod-shell
 
 setup:
 	test -f .env || cp .env.example .env
@@ -42,3 +43,22 @@ check:
 
 status:
 	$(COMPOSE) ps
+
+prod-up:
+	$(PROD_COMPOSE) up --build -d
+
+prod-down:
+	$(PROD_COMPOSE) down
+
+prod-migrate:
+	$(PROD_COMPOSE) exec web python manage.py migrate
+	$(PROD_COMPOSE) exec web python manage.py collectstatic --noinput
+
+prod-logs:
+	$(PROD_COMPOSE) logs -f web telegram-poller celery celery-beat
+
+prod-status:
+	$(PROD_COMPOSE) ps
+
+prod-shell:
+	$(PROD_COMPOSE) exec web python manage.py shell

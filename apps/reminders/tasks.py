@@ -10,7 +10,8 @@ def send_due_reminders():
     due = Reminder.objects.filter(status=Reminder.Status.PENDING, remind_at__lte=timezone.now()).select_related('task')[:20]
     count = 0
     for reminder in due:
-        send_message(settings.TELEGRAM_ALLOWED_CHAT_ID, f'Reminder: {reminder.task.title}')
+        if not send_message(settings.TELEGRAM_ALLOWED_CHAT_ID, f'Reminder: {reminder.task.title}'):
+            continue
         reminder.status = Reminder.Status.SENT
         reminder.sent_at = timezone.now()
         reminder.save(update_fields=['status', 'sent_at'])

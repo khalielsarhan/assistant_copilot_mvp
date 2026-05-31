@@ -1,0 +1,61 @@
+services:
+  web:
+    build: .
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --access-logfile -
+    env_file: ${APP_ENV_FILE:-.env.production}
+    ports:
+      - "127.0.0.1:8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  telegram-poller:
+    build: .
+    command: python manage.py poll_telegram --drop-webhook
+    env_file: ${APP_ENV_FILE:-.env.production}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  celery:
+    build: .
+    command: celery -A config worker -l info
+    env_file: ${APP_ENV_FILE:-.env.production}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  celery-beat:
+    build: .
+    command: celery -A config beat -l info
+    env_file: ${APP_ENV_FILE:-.env.production}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ceo_copilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ceo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -25,6 +25,12 @@ The intended operating mode is approval-first: the assistant drafts, summarizes,
 - Ollama for local AI
 - GitLab REST API
 
+## Production Hosting
+
+For a free always-on setup, use an Oracle Cloud Always Free Ampere A1 VM and run the bot with Telegram long polling. This avoids needing a paid domain, HTTPS certificate, or tunnel service for Telegram.
+
+See [docs/deployment.md](docs/deployment.md).
+
 ## Required Local Apps
 
 Install or enable these before running the full project:
@@ -304,6 +310,7 @@ make down            # stop containers
 ## Security Notes
 
 - Keep `.env` private.
+- Rotate the Telegram token before production if it was pasted into chat or shared anywhere.
 - Use one allowed Telegram chat ID only.
 - Use a GitLab token with the smallest required scope, preferably `read_api`.
 - Do not expose Django admin publicly without proper production hardening.
