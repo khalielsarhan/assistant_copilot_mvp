@@ -1,4 +1,5 @@
 import json
+import re
 from django.conf import settings
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
@@ -136,11 +137,40 @@ def _extract_except_query(text: str) -> str:
     return text[start:].strip()
 
 
+def _numbered_items(text: str) -> list[str]:
+    items = []
+    for line in text.splitlines():
+        match = re.match(r'^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$', line)
+        if match:
+            item = match.group(1).strip()
+            if item:
+                items.append(item)
+    return items
+
+
+def _split_command_lines(text: str) -> list[str]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    command_lines = [line for line in lines if line.startswith('/')]
+    if len(command_lines) >= 2 and len(command_lines) == len(lines):
+        return command_lines
+    return []
+
+
+def _format_created_tasks(tasks: list[Task]) -> str:
+    return '\n\n'.join(format_task(task) for task in tasks)
+
+
 def handle_message(chat_id: str, text: str) -> str:
     text = (text or '').strip()
     lower = text.lower()
     if not text:
         return 'Send /help to see commands, or /add followed by a task.'
+
+    command_lines = _split_command_lines(text)
+    if command_lines:
+        replies = [handle_message(chat_id, line) for line in command_lines]
+        return '\n\n'.join(replies)
+
     if lower in ['/start', '/help']:
         return HELP
     if _is_greeting(text):
@@ -153,6 +183,15 @@ def handle_message(chat_id: str, text: str) -> str:
         project, created = create_project_from_text(text)
         if not project:
             return 'What is the project name? Example: create project called IOLO'
+        items = _numbered_items(text)
+        if items:
+            tasks = [create_task_from_text(f'/add {item} for project {project.name}') for item in items]
+            action = 'Created' if created else 'Found existing'
+            return (
+                f'{action} project folder: {project.name}\n'
+                f'Created {len(tasks)} task{"s" if len(tasks) != 1 else ""}:\n\n'
+                f'{_format_created_tasks(tasks)}'
+            )
         action = 'Created' if created else 'Found existing'
         return (
             f'{action} project folder: {project.name}\n'

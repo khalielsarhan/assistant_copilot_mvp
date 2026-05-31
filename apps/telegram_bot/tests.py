@@ -268,6 +268,74 @@ class TelegramWebhookTests(TestCase):
         self.assertIn("Project: IOLO", response.json()["reply"])
 
     @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    @patch("apps.tasks.services.generate_json", return_value={})
+    def test_add_task_can_attach_to_project_with_short_for_name(self, mocked_generate_json):
+        project = Project.objects.create(name="IOLO")
+        payload = {
+            "message": {
+                "chat": {"id": "local-test"},
+                "text": "/add clean trello board for IOLO remind me tomorrow 10:00 am",
+            }
+        }
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        task = Task.objects.get()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(task.project, project)
+        self.assertEqual(task.title, "clean trello board")
+        self.assertEqual(task.due_date.date(), timezone.localdate() + timezone.timedelta(days=1))
+        self.assertIn("Project: IOLO", response.json()["reply"])
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    @patch("apps.tasks.services.generate_json", return_value={})
+    def test_multiline_add_commands_create_multiple_tasks(self, mocked_generate_json):
+        Project.objects.create(name="IOLO")
+        payload = {
+            "message": {
+                "chat": {"id": "local-test"},
+                "text": "/add clean trello board for IOLO remind me tomorrow 10:00 am\n/add brief the team remind me tomorrow 10:00 am",
+            }
+        }
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Task.objects.count(), 2)
+        self.assertTrue(Task.objects.filter(title="clean trello board", project__name="IOLO").exists())
+        self.assertTrue(Task.objects.filter(title="brief the team").exists())
+        self.assertEqual(response.json()["reply"].count("Created task:"), 2)
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
+    @patch("apps.tasks.services.generate_json", return_value={})
+    def test_project_request_with_numbered_items_creates_project_tasks(self, mocked_generate_json):
+        payload = {
+            "message": {
+                "chat": {"id": "local-test"},
+                "text": "I have a project called IOLO and I want to do some work on\n1. Clean the trello board\n2. after vacation briefing",
+            }
+        }
+
+        response = self.client.post(
+            reverse("telegram_webhook"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Project.objects.filter(name="IOLO").count(), 1)
+        self.assertEqual(Task.objects.filter(project__name="IOLO").count(), 2)
+        self.assertIn("Created 2 tasks", response.json()["reply"])
+
+    @override_settings(TELEGRAM_ALLOWED_CHAT_ID="local-test")
     def test_done_command_can_match_title(self):
         task = Task.objects.create(title="Review Hue integration direction")
         payload = {"message": {"chat": {"id": "local-test"}, "text": "/done Hue integration"}}

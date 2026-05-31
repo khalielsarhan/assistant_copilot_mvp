@@ -60,6 +60,10 @@ def _strip_capture_prefix(text: str) -> str:
     if clean.lower().startswith('remind me to '):
         clean = clean[13:].strip()
     clean = re.sub(r'\s+for\s+project\s+[a-zA-Z0-9][a-zA-Z0-9_-]*', ' ', clean, flags=re.IGNORECASE)
+    project = extract_project_reference(clean)
+    if project:
+        clean = re.sub(rf'\s+for\s+{re.escape(project.name)}\b', ' ', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\bremind\s+me\b.*$', ' ', clean, flags=re.IGNORECASE)
     clean = ' '.join(clean.split())
     return clean
 
@@ -82,7 +86,7 @@ owner_name defaults to Nour unless another owner is explicit.
 Message: {clean}
 """
     ai = generate_json(prompt, timeout=5)
-    parsed_due = parse_due_date(clean)
+    parsed_due = parse_due_date(text)
     due = None
     if ai.get('due_date'):
         try:
@@ -120,13 +124,17 @@ Message: {clean}
 
 def extract_project_reference(text: str) -> Project | None:
     match = re.search(r'\bfor\s+project\s+([a-zA-Z0-9][a-zA-Z0-9_-]*)', text, flags=re.IGNORECASE)
-    if not match:
-        return None
-    name = match.group(1).strip()
-    try:
-        return Project.objects.get(name__iexact=name)
-    except Project.DoesNotExist:
-        return None
+    if match:
+        name = match.group(1).strip()
+        try:
+            return Project.objects.get(name__iexact=name)
+        except Project.DoesNotExist:
+            return None
+
+    for project in Project.objects.all():
+        if re.search(rf'\bfor\s+{re.escape(project.name)}\b', text, flags=re.IGNORECASE):
+            return project
+    return None
 
 
 def create_task_from_text(text: str) -> Task:
