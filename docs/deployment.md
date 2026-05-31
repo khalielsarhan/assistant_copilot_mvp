@@ -43,7 +43,7 @@ Install Ollama:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:0.5b
+ollama pull qwen2.5:3b
 sudo systemctl enable --now ollama
 ```
 
@@ -76,7 +76,7 @@ DATABASE_URL=postgres://ceo:strong-password@db:5432/ceo_copilot
 TELEGRAM_BOT_TOKEN=your-rotated-token
 TELEGRAM_ALLOWED_CHAT_ID=your-chat-id
 OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=qwen2.5:0.5b
+OLLAMA_MODEL=qwen2.5:3b
 ```
 
 Rotate the Telegram bot token before production if it was ever pasted into chat or committed anywhere.

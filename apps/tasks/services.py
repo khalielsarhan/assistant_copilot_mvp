@@ -82,6 +82,8 @@ Allowed category values: CEO, ENGINEERING, HR, FINANCE, SALES, CLIENT, PERSONAL.
 Allowed priority values: LOW, MEDIUM, HIGH, URGENT.
 due_date must be ISO 8601 with timezone when present, otherwise null.
 owner_name defaults to Nour unless another owner is explicit.
+Do not include command words like /add, "remind me", project names, or due dates in the title.
+The title should be a short action phrase.
 
 Message: {clean}
 """
